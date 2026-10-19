@@ -258,6 +258,17 @@ function baglantilar() {
     $("dlgAyar").showModal();
   };
   $("aySicaklik").oninput = (e) => { $("aySicaklikDeger").textContent = e.target.value; };
+  // Kaydet düğmesine basılamasa bile ayarlar anında saklansın
+  const otomatikKaydet = () => {
+    ayar.web = $("ayWeb").checked;
+    ayar.proxy = $("ayProxy").value.trim();
+    ayar.sicaklik = parseFloat($("aySicaklik").value) || 0.6;
+    ayarKaydet();
+  };
+  $("ayWeb").addEventListener("change", otomatikKaydet);
+  $("ayProxy").addEventListener("input", otomatikKaydet);
+  $("ayProxy").addEventListener("change", otomatikKaydet);
+  $("aySicaklik").addEventListener("input", otomatikKaydet);
   $("btnAyarKapat").onclick = () => {
     ayar.web = $("ayWeb").checked;
     ayar.proxy = $("ayProxy").value.trim();
