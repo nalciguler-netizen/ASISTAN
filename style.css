@@ -50,3 +50,7 @@ dialog .satir:last-child { position: sticky; bottom: 0; background: var(--kart);
 #hafizaListe button { padding: 4px 10px; }
 .onay { display: flex !important; gap: 8px; align-items: center; color: var(--yazi) !important; font-size: 16px !important; }
 input[type=range] { width: 100%; accent-color: var(--neon); }
+.kod { margin: 8px 0; border: 1px solid var(--kenar); border-radius: 12px; overflow: hidden; background: #060a12; }
+.kod-ust { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: #111a2e; color: var(--soluk); font-size: 12px; }
+.kod-ust button { padding: 2px 10px; border-radius: 8px; font-size: 12px; }
+.kod pre { margin: 0; padding: 10px; overflow-x: auto; white-space: pre; word-break: normal; color: var(--yazi); font-size: 13px; }

@@ -156,7 +156,9 @@ export class Hafiza {
 
 export function sistemMetni({ tarih, notlar = [], webAcik = true, proxyVar = false }) {
   let s = "Sen kullanıcının telefonunda çalışan kişisel yapay zekâ asistanısın. Türkçe, kısa ve net cevap ver. " +
-    "Bilmediğin şeyi uydurma; emin değilsen bunu söyle. Kod istenirse çalışır, eksiksiz kod yaz.\n" +
+    "Bilmediğin şeyi uydurma; emin değilsen bunu söyle. " +
+    "Kod istenirse çalışır, eksiksiz kodu ``` işaretleri arasında, dil adını belirterek yaz; kodun altına en fazla 3 cümle açıklama ekle. " +
+    "Kodu gereksiz uzatma, hata durumlarını (boş girdi, olmayan dosya vb.) ele al.\n" +
     `Bugünün tarihi: ${tarih}.\n`;
   if (notlar.length) {
     s += "\nKullanıcının sana öğrettiği notlar (doğru kabul et):\n" + notlar.map((n) => "- " + n).join("\n") + "\n";
@@ -310,4 +312,110 @@ export function araclariKur({ fetchFn, proxy = "", hafiza, onayla, diller = ["tr
   }
 
   return { VIKI, ARA, OKU, HATIRLA };
+}
+
+// ---------- Proje modu: büyük işi küçük parçalara bölüp tek tek yazdırır ----------
+
+const DOSYA_ADI = /^[\w][\w.\-/]{0,60}\.\w{1,6}$/;
+
+export function planAyikla(metin, maxDosya = 5) {
+  const gor = dusunceAyir(metin).gorunen;
+  const plan = [];
+  for (const satir of gor.split("\n")) {
+    const m = satir.match(/^\s*(?:[-*\d.)]+\s*)?DOSYA\s*:\s*`?([^|`\s]+)`?\s*\|?\s*(.*)$/i);
+    if (!m) continue;
+    const ad = m[1].trim();
+    if (!DOSYA_ADI.test(ad) || ad.includes("..") || ad.startsWith("/")) continue;
+    if (plan.some((p) => p.ad === ad)) continue;
+    plan.push({ ad, gorev: m[2].trim().slice(0, 200) });
+    if (plan.length >= maxDosya) break;
+  }
+  return plan;
+}
+
+// İlk ``` bloğunu çıkarır; kapanmamışsa kesik=true (cevap yarıda kalmış demektir)
+export function kodAyikla(metin) {
+  const gor = dusunceAyir(metin).gorunen;
+  const bas = gor.indexOf("```");
+  if (bas < 0) return { kod: "", kesik: false, var: false };
+  let govde = gor.slice(bas + 3);
+  const nl = govde.indexOf("\n");
+  if (nl >= 0 && /^[\w+#.-]*$/.test(govde.slice(0, nl).trim())) govde = govde.slice(nl + 1);
+  const son = govde.indexOf("```");
+  const kesik = son < 0;
+  return { kod: (kesik ? govde : govde.slice(0, son)).replace(/\s+$/, ""), kesik, var: true };
+}
+
+// Yalnızca JavaScript için sözdizimi denetimi (kod ÇALIŞTIRILMAZ, sadece derlenir)
+export function sozdizimiKontrol(ad, kod) {
+  if (!/\.m?js$/i.test(ad)) return "";
+  const duz = kod
+    .replace(/^\s*import\s[^;]*?from\s+['"][^'"]+['"];?\s*$/gm, "")
+    .replace(/^\s*import\s+['"][^'"]+['"];?\s*$/gm, "")
+    .replace(/^\s*export\s+default\s+/gm, "")
+    .replace(/^\s*export\s*\{[^}]*\};?\s*$/gm, "")
+    .replace(/^(\s*)export\s+(?=(async\s+)?(function|class|const|let|var)\b)/gm, "$1");
+  try { new Function(duz); return ""; } catch (e) { return String(e && e.message ? e.message : e); }
+}
+
+// Önceki dosyalardan yalnızca dışa açılan adları/imzaları çıkarır (bağlam dar olduğu için tam kodu vermeyiz)
+export function imzaCikar(kod, maxSatir = 25) {
+  const out = [];
+  for (const satir of kod.split("\n")) {
+    if (/^\s*(export\s+)?(async\s+)?(function|class)\s+\w+|^\s*(export\s+)?(const|let|var)\s+\w+\s*=|\bid="[^"]+"|<(link|script)\b/.test(satir)) {
+      out.push(satir.trim().slice(0, 110));
+      if (out.length >= maxSatir) break;
+    }
+  }
+  return out.join("\n");
+}
+
+export async function projeAkisi({ istek, sohbet, planHazir, dosyaBasladi = () => {}, dosyaHazir, durdu = () => false, maxDosya = 5, maxDuzeltme = 1 }) {
+  const planMesaj = [
+    { role: "system", content:
+      "Sen yazılım mimarısın. Kullanıcının isteğini en fazla " + maxDosya + " küçük dosyaya böl (her dosya en fazla ~120 satır olsun). " +
+      "Kullanıcı başka teknoloji istemediyse sade HTML + CSS + JavaScript kullan (tarayıcıda çalışan, derleme gerektirmeyen). " +
+      "YALNIZCA şu biçimde satırlar yaz, başka hiçbir şey yazma:\nDOSYA: dosya_adi.uzanti | bu dosyanın görevi (tek cümle)" },
+    { role: "user", content: istek },
+  ];
+  const planMetni = await sohbet(planMesaj, () => {});
+  const plan = planAyikla(planMetni, maxDosya);
+  if (!plan.length) return { plan: [], dosyalar: [], hata: "Dosya planı çıkarılamadı. İsteği daha açık yazıp tekrar dene." };
+  planHazir(plan);
+  const planYazi = plan.map((p) => `- ${p.ad}: ${p.gorev}`).join("\n");
+  const dosyalar = [];
+  for (const p of plan) {
+    if (durdu()) break;
+    dosyaBasladi(p);
+    const onceki = dosyalar.map((d) => `[${d.ad}]\n${imzaCikar(d.kod)}`).join("\n").slice(0, 1800);
+    const mesaj = [
+      { role: "system", content:
+        "Sen deneyimli bir programcısın. Yalnızca istenen TEK dosyanın eksiksiz kodunu tek bir ``` bloğunda yaz. " +
+        "Açıklama ekleme. Başka dosyalardaki adlara/id'lere planla uyumlu ol. Yer tutucu ('buraya yaz') bırakma." },
+      { role: "user", content:
+        `Proje isteği: ${istek.slice(0, 600)}\n\nDosya planı:\n${planYazi}\n` +
+        (onceki ? `\nYazılmış dosyaların özeti:\n${onceki}\n` : "") +
+        `\nŞimdi yaz: ${p.ad} — ${p.gorev}` },
+    ];
+    let cevap = await sohbet(mesaj, () => {});
+    let k = kodAyikla(cevap);
+    let uyari = "";
+    for (let d = 0; d < maxDuzeltme && k.var && !k.kesik && !durdu(); d++) {
+      const hata = sozdizimiKontrol(p.ad, k.kod);
+      if (!hata || k.kod.length > 5000) break;
+      cevap = await sohbet([
+        mesaj[0],
+        { role: "user", content: `${p.ad} dosyasında sözdizimi hatası var: ${hata}\nHatayı düzelt ve dosyanın tam halini tek bir \`\`\` bloğunda yaz.\n\n\`\`\`\n${k.kod}\n\`\`\`` },
+      ], () => {});
+      const yeni = kodAyikla(cevap);
+      if (yeni.var) k = yeni;
+    }
+    if (!k.var) uyari = "Model kod üretmedi.";
+    else if (k.kesik) uyari = "Cevap yarıda kesildi; bu dosyayı daha küçük parçaya bölmek gerekebilir.";
+    else { const h = sozdizimiKontrol(p.ad, k.kod); if (h) uyari = "Sözdizimi hatası kaldı: " + h; }
+    const d = { ad: p.ad, kod: k.kod, uyari };
+    dosyalar.push(d);
+    dosyaHazir(d);
+  }
+  return { plan, dosyalar, hata: "" };
 }

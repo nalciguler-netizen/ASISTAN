@@ -1,6 +1,6 @@
 // app.js - arayüz + WebLLM bağlantısı. Mantık core.js içindedir.
 import {
-  Hafiza, sistemMetni, gecmisKirp, sohbetDongusu, araclariKur,
+  Hafiza, sistemMetni, gecmisKirp, sohbetDongusu, araclariKur, projeAkisi,
 } from "./core.js";
 
 const $ = (id) => document.getElementById(id);
@@ -11,7 +11,7 @@ const depo = (() => {
   try { localStorage.setItem("_t", "1"); localStorage.removeItem("_t"); return localStorage; } catch { return bellekDepo; }
 })();
 
-const VARSAYILAN = { web: true, proxy: "", sicaklik: 0.6, model: "" };
+const VARSAYILAN = { web: true, proxy: "", sicaklik: 0.6, model: "", kod: false, dusun: false };
 let ayar = { ...VARSAYILAN, ...(() => { try { return JSON.parse(depo.getItem("ayar_v1") || "{}"); } catch { return {}; } })() };
 const ayarKaydet = () => depo.setItem("ayar_v1", JSON.stringify(ayar));
 
@@ -22,6 +22,7 @@ const gecmisKaydet = () => { gecmis = gecmis.slice(-40); depo.setItem("gecmis_v1
 let webllm = null;
 let engine = null;
 let yukluModel = "";
+let genis = false; // bağlam penceresi 8192'ye çıkarılabildi mi
 let mesgul = false;
 let durdurIstendi = false;
 
@@ -39,10 +40,38 @@ function linkli(el, metin) {
   }
   el.append(metin.slice(son));
 }
+// ``` ile çevrili bölümleri kod kutusu (Kopyala düğmeli) olarak çizer; kapanmamış blok da kod sayılır
+function govdeCiz(el, metin) {
+  el.textContent = "";
+  metin.split("```").forEach((p, i) => {
+    if (i % 2 === 0) {
+      if (p) { const s = document.createElement("span"); linkli(s, p); el.append(s); }
+      return;
+    }
+    const nl = p.indexOf("\n");
+    const ilk = nl >= 0 ? p.slice(0, nl).trim() : null;
+    const dilVar = ilk !== null && /^[\w+#.-]*$/.test(ilk);
+    const kod = (dilVar ? p.slice(nl + 1) : p).replace(/\n$/, "");
+    const kutu = document.createElement("div"); kutu.className = "kod";
+    const ust = document.createElement("div"); ust.className = "kod-ust";
+    const et = document.createElement("span"); et.textContent = (dilVar && ilk) || "kod";
+    const dg = document.createElement("button"); dg.type = "button"; dg.textContent = "Kopyala";
+    dg.onclick = async () => {
+      try { await navigator.clipboard.writeText(kod); dg.textContent = "Kopyalandı"; }
+      catch { dg.textContent = "Kopyalanamadı"; }
+      setTimeout(() => { dg.textContent = "Kopyala"; }, 1500);
+    };
+    ust.append(et, dg);
+    const pre = document.createElement("pre"); const c = document.createElement("code"); c.textContent = kod;
+    pre.append(c);
+    kutu.append(ust, pre);
+    el.append(kutu);
+  });
+}
 function balon(tur, metin = "") {
   const d = document.createElement("div");
   d.className = "balon " + tur;
-  linkli(d, metin);
+  govdeCiz(d, metin);
   $("sohbet").append(d);
   d.scrollIntoView({ block: "end" });
   return d;
@@ -115,12 +144,19 @@ async function modeliYukle() {
   $("ilerleme").hidden = false; $("ilerleme").value = 0;
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch { /* yok say */ }
   try {
-    engine = await webllm.CreateMLCEngine(id, {
+    const yapilandir = {
       initProgressCallback: (p) => {
         if (typeof p.progress === "number") $("ilerleme").value = p.progress;
         if (p.text) durum(p.text);
       },
-    });
+    };
+    genis = false;
+    if (ayar.kod) {
+      // Kod modu: daha geniş bağlam penceresi dene; belleğe sığmazsa varsayılana dön
+      try { engine = await webllm.CreateMLCEngine(id, yapilandir, { context_window_size: 8192 }); genis = true; }
+      catch { engine = null; }
+    }
+    if (!engine) engine = await webllm.CreateMLCEngine(id, yapilandir);
     yukluModel = id;
     ayar.model = id; ayarKaydet();
     $("modelSecimi").hidden = true;
@@ -139,8 +175,18 @@ async function modeliYukle() {
 
 async function modelSohbet(mesajlar, onToken) {
   let tam = "";
+  // Qwen3 varsayılan olarak uzun "düşünür" ve cevap hakkını yer; kapalıyken /no_think ekle (geçmişe yazılmaz)
+  const msgs = mesajlar.map((m) => ({ ...m }));
+  const dusunmeyi = /qwen3/i.test(yukluModel) && !ayar.dusun;
+  if (dusunmeyi) {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "user") { msgs[i].content += " /no_think"; break; }
+    }
+  }
+  const temel = ayar.kod ? (genis ? 1800 : 1000) : 700;
   const akis = await engine.chat.completions.create({
-    messages: mesajlar, stream: true, temperature: ayar.sicaklik, max_tokens: 700,
+    messages: msgs, stream: true, temperature: ayar.sicaklik,
+    max_tokens: ayar.dusun ? temel + 1000 : temel,
   });
   for await (const parca of akis) {
     const d = (parca.choices && parca.choices[0] && parca.choices[0].delta && parca.choices[0].delta.content) || "";
@@ -153,6 +199,43 @@ async function modelSohbet(mesajlar, onToken) {
 // ---------- Sohbet ----------
 function bugun() {
   return new Date().toLocaleDateString("tr-TR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+}
+
+function dosyaIndir(ad, kod) {
+  const url = URL.createObjectURL(new Blob([kod], { type: "text/plain;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = ad.split("/").pop(); a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// /proje <istek>: önce dosya planı, sonra her dosya ayrı ayrı yazılır, JS dosyalarının sözdizimi denetlenir
+async function projeCalistir(istek) {
+  mesgul = true; durdurIstendi = false;
+  $("btnGonder").hidden = true; $("btnDurdur").hidden = false;
+  balon("kullanici", "/proje " + istek);
+  const bilgi = balon("arac", "📋 Dosya planı hazırlanıyor…");
+  try {
+    const s = await projeAkisi({
+      istek,
+      sohbet: modelSohbet,
+      durdu: () => durdurIstendi,
+      planHazir: (plan) => { bilgi.textContent = "📋 Plan: " + plan.map((p) => p.ad).join(", "); },
+      dosyaBasladi: (p) => { bilgi.textContent = "✍️ Yazılıyor: " + p.ad; },
+      dosyaHazir: (d) => {
+        const uzanti = (d.ad.split(".").pop() || "").toLowerCase();
+        const b = balon("asistan", "📄 " + d.ad + "\n```" + uzanti + "\n" + d.kod + "\n```" + (d.uyari ? "\n⚠️ " + d.uyari : ""));
+        const dg = document.createElement("button"); dg.type = "button"; dg.textContent = "İndir: " + d.ad;
+        dg.onclick = () => dosyaIndir(d.ad, d.kod);
+        b.append(dg);
+      },
+    });
+    if (s.hata) balon("hata", s.hata);
+    else bilgi.textContent = durdurIstendi ? "⏹ Durduruldu." : `✅ Bitti: ${s.dosyalar.length} dosya. Dosyaları kopyalayıp/indirip depona yükle; sonra çalıştırıp hata görürsen bana yaz.`;
+  } catch (e) {
+    balon("hata", "Hata: " + (e && e.message ? e.message : e));
+  } finally {
+    mesgul = false;
+    $("btnGonder").hidden = false; $("btnDurdur").hidden = true;
+  }
 }
 
 async function gonder(metin) {
@@ -169,6 +252,12 @@ async function gonder(metin) {
     }
     if (ad === "hafiza" || ad === "unut") { hafizaAc(); return; }
     if (ad === "temizle") { gecmis = []; gecmisKaydet(); $("sohbet").textContent = ""; return; }
+    if (ad === "proje") {
+      if (!arg.trim()) { balon("asistan", "Kullanım: /proje Not tutan basit bir web uygulaması yap"); return; }
+      if (!engine) { balon("hata", "Önce modeli yükle."); return; }
+      await projeCalistir(arg.trim());
+      return;
+    }
   }
   if (!engine) { balon("hata", "Önce modeli yükle."); return; }
 
@@ -179,7 +268,7 @@ async function gonder(metin) {
   const yaz = (p) => {
     if (!cevapEl) cevapEl = balon("asistan");
     cevapMetni += p;
-    linkli(cevapEl, cevapMetni);
+    govdeCiz(cevapEl, cevapMetni);
     cevapEl.scrollIntoView({ block: "end" });
   };
   try {
@@ -187,7 +276,7 @@ async function gonder(metin) {
     const proxyVar = !!ayar.proxy.trim();
     const sistem = { role: "system", content: sistemMetni({ tarih: bugun(), notlar, webAcik: ayar.web, proxyVar }) };
     // Bağlam penceresi dar (çoğu modelde ~4096 token, Türkçe çok token harcar): geçmişi kısa tut
-    const mesajlar = gecmisKirp([sistem, ...gecmis, { role: "user", content: metin }], 4000);
+    const mesajlar = gecmisKirp([sistem, ...gecmis, { role: "user", content: metin }], genis ? 7000 : 4000);
     const araclar = araclariKur({
       fetchFn: (u, o) => fetch(u, o),
       proxy: ayar.proxy,
@@ -254,6 +343,7 @@ function baglantilar() {
   };
   $("btnAyar").onclick = () => {
     $("ayWeb").checked = ayar.web; $("ayProxy").value = ayar.proxy; $("aySicaklik").value = ayar.sicaklik;
+    $("ayKod").checked = ayar.kod; $("ayDusun").checked = ayar.dusun;
     $("aySicaklikDeger").textContent = ayar.sicaklik;
     $("dlgAyar").showModal();
   };
@@ -263,17 +353,17 @@ function baglantilar() {
     ayar.web = $("ayWeb").checked;
     ayar.proxy = $("ayProxy").value.trim();
     ayar.sicaklik = parseFloat($("aySicaklik").value) || 0.6;
+    ayar.kod = $("ayKod").checked; ayar.dusun = $("ayDusun").checked;
     ayarKaydet();
   };
+  $("ayKod").addEventListener("change", otomatikKaydet);
+  $("ayDusun").addEventListener("change", otomatikKaydet);
   $("ayWeb").addEventListener("change", otomatikKaydet);
   $("ayProxy").addEventListener("input", otomatikKaydet);
   $("ayProxy").addEventListener("change", otomatikKaydet);
   $("aySicaklik").addEventListener("input", otomatikKaydet);
   $("btnAyarKapat").onclick = () => {
-    ayar.web = $("ayWeb").checked;
-    ayar.proxy = $("ayProxy").value.trim();
-    ayar.sicaklik = parseFloat($("aySicaklik").value) || 0.6;
-    ayarKaydet();
+    otomatikKaydet();
     $("dlgAyar").close();
   };
   $("btnSohbetTemizle").onclick = () => { gecmis = []; gecmisKaydet(); $("sohbet").textContent = ""; $("dlgAyar").close(); };
