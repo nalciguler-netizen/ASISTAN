@@ -1,0 +1,7 @@
+name = "asistan-arama"
+main = "arama-proxy.js"
+compatibility_date = "2025-01-01"
+
+# Hangi sitelerin bu sunucuyu kullanabileceği (virgülle ayır). Kendi GitHub Pages adresini yaz.
+[vars]
+ALLOWED_ORIGINS = "https://nalciguler-netizen.github.io"
