@@ -384,6 +384,12 @@ function baglantilar() {
     otomatikKaydet();
     $("dlgAyar").close();
   };
+  // Model değiştir: kayıtlı seçimi sil ve sayfayı yenile (otomatik yükleme devreye girmez, liste açılır)
+  $("btnModelDegistir").onclick = () => {
+    ayar.model = ""; ayarKaydet();
+    $("dlgAyar").close();
+    if (typeof location !== "undefined" && location.reload) location.reload();
+  };
   $("btnSohbetTemizle").onclick = () => { gecmis = []; gecmisKaydet(); $("sohbet").textContent = ""; $("dlgAyar").close(); };
 }
 
