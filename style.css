@@ -3,6 +3,7 @@
   --neon: #29e0ff; --neon2: #8a5cff; --hata: #ff5c7a;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--yazi);
