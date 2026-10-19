@@ -137,6 +137,24 @@ function modelSecenekleri() {
   return kayitlar.length;
 }
 
+// Seçili model telefonda önbellekte mi? Düğme yazısı ve durum satırı buna göre değişir.
+async function onbellekGoster() {
+  const id = $("modelSec").value;
+  let var_ = null;
+  try { if (id && webllm && typeof webllm.hasModelInCache === "function") var_ = await webllm.hasModelInCache(id); } catch { var_ = null; }
+  if (id !== $("modelSec").value) return; // bu arada seçim değişti
+  if (var_ === true) {
+    $("btnYukle").textContent = "Yükle (telefonda var, indirmez)";
+    durum("Bu model telefonda kayıtlı. Yüklemek indirme yapmaz, birkaç saniye sürer.");
+  } else if (var_ === false) {
+    $("btnYukle").textContent = "İndir ve yükle";
+    durum("Bu model telefonda yok; yüklerken indirilecek (bir kez).");
+  } else {
+    $("btnYukle").textContent = "Modeli yükle";
+  }
+  return var_;
+}
+
 async function modeliYukle() {
   const id = $("modelSec").value;
   if (!id) return;
@@ -391,6 +409,10 @@ async function basla() {
   if (!n) { durum("Model listesi boş."); return; }
   $("modelSecimi").hidden = false;
   durum("Bir model seç ve yükle (ilk seferde indirir, sonra telefonda saklanır).");
+  $("modelSec").addEventListener("change", onbellekGoster);
+  // Model telefonda kayıtlıysa ve daha önce seçilmişse düğmeye basmadan otomatik yükle (indirme olmaz)
+  const kayitli = await onbellekGoster();
+  if (kayitli === true && ayar.model && $("modelSec").value === ayar.model && !mesgul) await modeliYukle();
 }
 
 basla();
