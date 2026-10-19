@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<title>Asistan</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Asistan</h1>
+  <div class="ust-dugmeler">
+    <button id="btnHafiza" aria-label="Hafıza">🧠</button>
+    <button id="btnAyar" aria-label="Ayarlar">⚙️</button>
+  </div>
+</header>
+
+<section id="modelKart" class="kart">
+  <div id="durumSatiri">Başlatılıyor…</div>
+  <div id="modelSecimi" hidden>
+    <label for="modelSec">Model</label>
+    <select id="modelSec"></select>
+    <button id="btnYukle" class="birincil">Modeli yükle</button>
+    <progress id="ilerleme" max="1" value="0" hidden></progress>
+  </div>
+  <details id="taniKutusu">
+    <summary>Cihaz durumu</summary>
+    <pre id="taniMetni"></pre>
+  </details>
+</section>
+
+<main id="sohbet" aria-live="polite"></main>
+
+<form id="giris" autocomplete="off">
+  <textarea id="metin" rows="1" placeholder="Bir şey sor… (/ogren ile not öğret)" enterkeyhint="send"></textarea>
+  <button id="btnGonder" class="birincil" type="submit">Gönder</button>
+  <button id="btnDurdur" type="button" hidden>Durdur</button>
+</form>
+
+<dialog id="dlgHafiza">
+  <h2>Hafıza</h2>
+  <p class="ipucu">Burada kayıtlı notlar telefonda saklanır ve her soruda ilgili olanlar asistana verilir.</p>
+  <div class="satir">
+    <input id="yeniNot" type="text" placeholder="Yeni not ekle…" maxlength="600">
+    <button id="btnNotEkle" class="birincil">Ekle</button>
+  </div>
+  <ul id="hafizaListe"></ul>
+  <div class="satir">
+    <button id="btnYedekAl">Yedek indir</button>
+    <label class="dugme">Yedek yükle<input id="yedekDosya" type="file" accept="application/json" hidden></label>
+    <button id="btnHafizaKapat">Kapat</button>
+  </div>
+</dialog>
+
+<dialog id="dlgAyar">
+  <h2>Ayarlar</h2>
+  <label class="onay"><input id="ayWeb" type="checkbox"> İnternet araçlarını kullan</label>
+  <label for="ayProxy">Arama sunucusu adresi (isteğe bağlı)</label>
+  <input id="ayProxy" type="url" placeholder="https://…workers.dev">
+  <p class="ipucu">Boşsa yalnızca Vikipedi aranır. Genel web araması ve sayfa okuma için worker/ klasöründeki sunucuyu yayınlayıp adresini buraya yaz.</p>
+  <label for="aySicaklik">Yaratıcılık: <span id="aySicaklikDeger"></span></label>
+  <input id="aySicaklik" type="range" min="0" max="1.2" step="0.1">
+  <div class="satir">
+    <button id="btnSohbetTemizle">Sohbeti temizle</button>
+    <button id="btnAyarKapat" class="birincil">Kaydet</button>
+  </div>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
