@@ -11,7 +11,7 @@ const depo = (() => {
   try { localStorage.setItem("_t", "1"); localStorage.removeItem("_t"); return localStorage; } catch { return bellekDepo; }
 })();
 
-const VARSAYILAN = { web: true, proxy: "", sicaklik: 0.6, model: "", kod: false, dusun: false };
+const VARSAYILAN = { web: true, proxy: "", sicaklik: 0.6, model: "", kod: false, dusun: false, sade: false };
 let ayar = { ...VARSAYILAN, ...(() => { try { return JSON.parse(depo.getItem("ayar_v1") || "{}"); } catch { return {}; } })() };
 const ayarKaydet = () => depo.setItem("ayar_v1", JSON.stringify(ayar));
 
@@ -194,8 +194,13 @@ async function modeliYukle() {
 async function modelSohbet(mesajlar, onToken) {
   let tam = "";
   // Qwen3 varsayılan olarak uzun "düşünür" ve cevap hakkını yer; kapalıyken /no_think ekle (geçmişe yazılmaz)
-  const msgs = mesajlar.map((m) => ({ ...m }));
-  const dusunmeyi = /qwen3/i.test(yukluModel) && !ayar.dusun;
+  let msgs = mesajlar.map((m) => ({ ...m }));
+  // Sade test modu: yalnızca son kullanıcı mesajı gider (sistem metni, /no_think, geçmiş yok) — sorunun kaynağını ayırmak için
+  if (ayar.sade) {
+    const son = [...msgs].reverse().find((m) => m.role === "user");
+    msgs = [{ role: "user", content: (son ? son.content : "Merhaba") }];
+  }
+  const dusunmeyi = !ayar.sade && /qwen3/i.test(yukluModel) && !ayar.dusun;
   if (dusunmeyi) {
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === "user") { msgs[i].content += " /no_think"; break; }
@@ -361,7 +366,7 @@ function baglantilar() {
   };
   $("btnAyar").onclick = () => {
     $("ayWeb").checked = ayar.web; $("ayProxy").value = ayar.proxy; $("aySicaklik").value = ayar.sicaklik;
-    $("ayKod").checked = ayar.kod; $("ayDusun").checked = ayar.dusun;
+    $("ayKod").checked = ayar.kod; $("ayDusun").checked = ayar.dusun; $("aySade").checked = ayar.sade;
     $("aySicaklikDeger").textContent = ayar.sicaklik;
     $("dlgAyar").showModal();
   };
@@ -371,9 +376,10 @@ function baglantilar() {
     ayar.web = $("ayWeb").checked;
     ayar.proxy = $("ayProxy").value.trim();
     ayar.sicaklik = parseFloat($("aySicaklik").value) || 0.6;
-    ayar.kod = $("ayKod").checked; ayar.dusun = $("ayDusun").checked;
+    ayar.kod = $("ayKod").checked; ayar.dusun = $("ayDusun").checked; ayar.sade = $("aySade").checked;
     ayarKaydet();
   };
+  $("aySade").addEventListener("change", otomatikKaydet);
   $("ayKod").addEventListener("change", otomatikKaydet);
   $("ayDusun").addEventListener("change", otomatikKaydet);
   $("ayWeb").addEventListener("change", otomatikKaydet);
